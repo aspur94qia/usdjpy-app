@@ -29,7 +29,7 @@ a{color:#7db4e6;text-decoration:none}
 .tab{display:none}
 </style></head><body>
 <div class="brand">PipHawk</div>
-<div id="chips"></div>
+<div id="chips" style="display:none"></div>
 <div style="display:flex;justify-content:space-between;align-items:flex-end">
 <div><h1 id="pn">-</h1><div id="px">-</div></div>
 <label style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><input id="live" type="checkbox" style="width:auto"> Live 30 dtk</label>
@@ -53,7 +53,7 @@ a{color:#7db4e6;text-decoration:none}
 
 <div class="tab" id="t-b">
 <div class="card"><h2>Perbandingan jenis sinyal</h2><div class="note" id="btm"></div><div id="bt"></div>
-<p class="note">Kolom: trade | win rate | hasil bersih dalam R (sudah termasuk spread). Disimulasikan sebagai pending order yang berlaku 6 candle, order yang tidak terisi tidak dihitung. Strategi terbaik di data lama belum tentu terbaik ke depan. Filter tren TF atas tidak ikut diuji.</p></div>
+<p class="note">Kolom kanan: saldo akhir dan perubahannya (risiko % per trade digandakan, spread sudah termasuk, lot dianggap pas tanpa pembulatan 0,01). DD = penurunan saldo terbesar dari puncak. Disimulasikan sebagai pending order yang berlaku 6 candle, order yang tidak terisi tidak dihitung. Strategi terbaik di data lama belum tentu terbaik ke depan. Filter tren TF atas tidak ikut diuji.</p></div>
 </div>
 
 <div class="tab" id="t-n"><div class="card"><h2>Berita terkait (diterjemahkan)</h2><div id="nw"></div>
@@ -68,10 +68,10 @@ a{color:#7db4e6;text-decoration:none}
 <div><label>Risiko (%)</label><input id="risk" type="number" step="0.1" inputmode="decimal"></div>
 <div><label>Spread pair ini (pip)</label><input id="spr" type="number" step="0.1" inputmode="decimal"></div>
 </div>
-<p class="note">Spread live FBS tidak bisa dibaca dari luar MT5. Nilai bawaan adalah rata-rata tipikal akun Standar FBS dari ulasan pihak ketiga (EUR/USD 0,9, GBP/USD 1,2, emas 0,32 USD), sisanya perkiraan. Cocokkan dengan spread di MT5 Anda lalu isi di sini. Lot minimum 0,01, kontrak 100.000 unit (emas 100 oz, 1 pip di sini = 0,10 USD). Data emas dari kontrak berjangka Yahoo, bisa beda sedikit dari spot FBS.</p>
-<label style="display:flex;gap:8px;align-items:center;margin:12px 0 8px;font-size:14px;color:#e6edf3"><input id="nt" type="checkbox" style="width:auto"> Notifikasi sinyal dan berita (semua pair)</label>
+<p class="note">Spread live FBS tidak bisa dibaca dari luar MT5. Nilai bawaan USD/JPY (1,5 pip) hanya perkiraan saya. Cocokkan dengan spread di MT5 Anda lalu isi di sini. Lot minimum 0,01, kontrak 100.000 unit (emas 100 oz, 1 pip di sini = 0,10 USD). Data emas dari kontrak berjangka Yahoo, bisa beda sedikit dari spot FBS.</p>
+<label style="display:flex;gap:8px;align-items:center;margin:12px 0 8px;font-size:14px;color:#e6edf3"><input id="nt" type="checkbox" style="width:auto"> Notifikasi sinyal dan berita USD/JPY</label>
 <button class="alt" id="nb">Izinkan di latar belakang</button> <button class="alt" id="nx">Tes notifikasi</button>
-<p class="note">Semua pair dipindai tiap 5 menit pada timeframe yang sedang dipilih (dengan filter tren TF atas). Notifikasi berita: semua berita baru untuk pair yang sedang dipilih, dan hanya berita penting untuk pair lain. Berjalan selama sistem tidak mematikan aplikasi. Di HP Xiaomi, Oppo, Vivo, aktifkan juga autostart dan matikan penghemat baterai untuk PipHawk.</p></div></div>
+<p class="note">USD/JPY dipindai tiap 5 menit pada timeframe yang sedang dipilih (dengan filter tren TF atas). Notifikasi berita: semua berita baru untuk USD/JPY. Berjalan selama sistem tidak mematikan aplikasi. Di HP Xiaomi, Oppo, Vivo, aktifkan juga autostart dan matikan penghemat baterai untuk PipHawk.</p></div></div>
 
 <p class="note">Sinyal dan kesimpulan berasal dari aturan otomatis, bukan jaminan profit. Pasang order pending manual di MT5, uji di akun demo dulu.</p>
 
@@ -89,10 +89,11 @@ const P={
  GBPJPY:{y:'GBPJPY=X',pip:.01,d:3,pv:'x',sp:3,n:'GBP/JPY'},
  XAUUSD:{y:'GC=F',pip:.1,d:2,pv:'g',sp:3.2,n:'XAU/USD',q:'XAUUSD gold'}
 };
+Object.keys(P).forEach(k=>{if(k!=='USDJPY')delete P[k]});
 const ST={mix:'Gabungan EMA+RSI',cross:'EMA cross 20/50',rsi:'RSI jenuh',macd:'MACD cross',bb:'Bollinger',brk:'Breakout 20 candle'};
 const SD={mix:'Tren EMA plus momentum RSI, butuh 2 dari 3 setuju. Order: Stop, atau Limit kalau harga sudah jauh dari EMA20.',cross:'Sinyal saat EMA20 memotong EMA50, berlaku 5 candle. Order: Stop.',rsi:'Beli saat RSI di bawah 30, jual di atas 70 (melawan tren). Order: Limit.',macd:'Sinyal saat MACD memotong garis sinyal, berlaku 3 candle. Order: Stop.',bb:'Beli saat harga menembus pita bawah, jual di pita atas (melawan tren), berlaku 2 candle. Order: Limit.',brk:'Beli saat close menembus high 20 candle, jual saat menembus low, berlaku 2 candle. Order: Stop.'};
 const HOLD={cross:5,macd:3,bb:2,brk:2};
-const TF={'5m':['5m','5d'],'15m':['15m','1mo'],'1h':['60m','6mo'],'1d':['1d','2y']};
+const TF={'5m':['5m','5d'],'15m':['15m','1mo'],'1h':['60m','6mo'],'1d':['1d','5y']};
 const HR={'5m':['60m','3mo'],'15m':['60m','3mo'],'1h':['1d','1y'],'1d':['1wk','5y']};
 const HN={'5m':'1 jam','15m':'1 jam','1h':'harian','1d':'mingguan'};
 const TL={'5m':'M5','15m':'M15','1h':'H1','1d':'D1'};
@@ -163,8 +164,8 @@ function pendPlan(k,s,price,e20,a,h20,l20){
  const u=e20>price?Math.min(e20,price+1.2*a):price+.5*a;
  return{t:'SELL LIMIT',en:Math.max(u,price+.3*a)};
 }
-function bt(rows,I,sg,k,rr,p,spr){
- let w=0,l=0,net=0,i=55;
+function bt(rows,I,sg,k,rr,p,spr,st){
+ let w=0,l=0,net=0,i=st,bal=S.bal,pk=S.bal,dd=0;const ap=r=>{bal*=1+S.risk/100*r;if(bal>pk)pk=bal;const d=(pk-bal)/pk;if(d>dd)dd=d};
  while(i<rows.length-1){
   const s=sg[i];
   if(!s){i++;continue}
@@ -176,13 +177,13 @@ function bt(rows,I,sg,k,rr,p,spr){
   let done=0;j=fill;
   for(;j<rows.length;j++){
    const x=rows[j],hs=s>0?x.l<=sl:x.h>=sl,ht=s>0?x.h>=tp:x.l<=tp;
-   if(hs){l++;net-=1+cost;done=1;break}
-   if(ht&&j>fill){w++;net+=rr-cost;done=1;break}
+   if(hs){l++;net-=1+cost;ap(-1-cost);done=1;break}
+   if(ht&&j>fill){w++;net+=rr-cost;ap(rr-cost);done=1;break}
   }
   if(!done)break;
   i=j+1;
  }
- return{w:w,l:l,net:net};
+ return{w:w,l:l,net:net,bal:bal,dd:dd};
 }
 function spFor(pr){return S.sp[pr]!=null?S.sp[pr]:P[pr].sp}
 function spOf(){return spFor(S.pair)}
@@ -192,6 +193,14 @@ function lvl(side,en,pr,a,price,jr){
  let lot=Math.floor(risk/(rp*pv)*100)/100;if(lot<.01)lot=.01;
  const real=lot*rp*pv;
  return{sl:en-side*slD,tp:en+side*slD*S.rr,pips:pips,lot:lot,real:real,tg:lot*pips*pv*S.rr,warn:real>risk*1.05};
+}
+function btx(g,k){return bt(g.rows,g.I,g.all[k],k,S.rr,P[S.pair],spOf(),Math.max(55,g.rows.length-1000))}
+function btTable(g){
+ const usd=v=>'$'+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+ let tb='';
+ Object.keys(ST).forEach(k=>{const b=btx(g,k),nn=b.w+b.l,pc=(b.bal/S.bal-1)*100,up=b.bal>=S.bal;
+  tb+='<div class="r'+(k===S.st?' sel':'')+'"><span>'+ST[k]+'<br><small class="note">'+nn+' trade | win '+(nn?Math.round(100*b.w/nn)+'%':'-')+' | DD maks '+(b.dd*100).toFixed(1)+'%</small></span><span style="text-align:right"><b class="'+(up?'b':'s')+'">'+usd(b.bal)+'</b><br><small class="'+(up?'b':'s')+'">'+(pc>=0?'+':'')+pc.toFixed(1)+'% ('+(b.net>0?'+':'')+b.net.toFixed(1)+'R)</small></span></div>'});
+ return tb;
 }
 async function load(q){
  if(busy)return;busy=true;const pr=S.pair,tf0=S.tf,p=P[pr];
@@ -251,7 +260,7 @@ function concl(){
  const add=(k,t)=>{lines.push('<div class="r"><span class="'+(k==='g'?'b':k==='w'?'y':'s')+'" style="width:14px">'+(k==='g'?'+':k==='w'?'!':'x')+'</span><span style="flex:1">'+t+'</span></div>');if(k==='b')bad++;if(k==='w')warn++};
  const age=Date.now()/1000-g.rows[n].t,lim=S.tf==='1d'?4*86400:6*TFS[S.tf];
  if(age>lim)add('b','Data harga sudah lama, pasar mungkin tutup (mis. akhir pekan)');
- const b=bt(g.rows,g.I,g.all[S.st],S.st,S.rr,p,spOf()),nn=b.w+b.l;
+ const b=btx(g,S.st),nn=b.w+b.l;
  let v,vc,plan='';
  if(!sig){
   const base=g.all[S.st][n];
@@ -297,11 +306,7 @@ function render(){
   g.lv=[{v:g.pl.en,c:'#e6edf3',t:g.pl.t},{v:L.sl,c:'#ff6b5e',t:'SL'},{v:L.tp,c:'#3ecf93',t:'TP'}];
  }else{$('cards').innerHTML='';g.lv=[]}
  $('jb').style.display=sig?'inline-block':'none';
- let tb='<div class="r"><span class="note">Strategi</span><span class="note">trade | win | hasil</span></div>';
- Object.keys(ST).forEach(k=>{const b=bt(g.rows,g.I,g.all[k],k,S.rr,p,spOf()),nn=b.w+b.l;
-  tb+='<div class="r'+(k===S.st?' sel':'')+'"><span>'+ST[k]+'</span><span>'+nn+' | '+(nn?Math.round(100*b.w/nn)+'%':'-')+' | <b class="'+(b.net>0?'b':'s')+'">'+(b.net>0?'+':'')+b.net.toFixed(1)+'R</b></span></div>'});
- $('btm').textContent=p.n+', '+TL[S.tf]+', '+g.rows.length+' candle, R:R '+S.rr+', impas di win rate '+(100/(1+S.rr)).toFixed(0)+'% sebelum spread.';
- $('bt').innerHTML=tb;
+ $('btm').textContent=p.n+', '+TL[S.tf]+', '+(g.rows.length-Math.max(55,g.rows.length-1000))+' candle terakhir, saldo awal $'+S.bal+', risiko '+S.risk+'% per trade (digandakan tiap trade), R:R '+S.rr+', impas di win rate '+(100/(1+S.rr)).toFixed(0)+'% sebelum spread.';$('bt').innerHTML=btTable(g);
  concl();jrender();draw();
 }
 function draw(){
