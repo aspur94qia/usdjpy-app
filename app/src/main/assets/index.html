@@ -1,0 +1,88 @@
+<!DOCTYPE html><html lang="id"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>USD/JPY</title>
+<style>
+body{margin:0;padding:14px;background:#0e151c;color:#e6edf3;font:15px/1.45 sans-serif}
+h1{font-size:18px;margin:0;color:#93a1ae;font-weight:600}
+#px{font-size:34px;font-weight:700;margin:2px 0}
+#st{font-size:12px;color:#93a1ae}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}
+label{font-size:12px;color:#93a1ae;display:block}
+input,select{width:100%;box-sizing:border-box;padding:8px;background:#16212b;color:#e6edf3;border:1px solid #2a3846;border-radius:8px;font-size:15px}
+button{padding:10px 14px;border:0;border-radius:8px;background:#2f6fb0;color:#fff;font-size:15px;font-weight:600}
+.sig{font-size:30px;font-weight:700;margin:10px 0 0}.b{color:#3ecf93}.s{color:#ff6b5e}.n{color:#93a1ae}
+#ind{font-size:12.5px;color:#93a1ae;margin-bottom:10px}
+.card{background:#16212b;border:1px solid #2a3846;border-radius:10px;padding:12px;margin-bottom:10px}
+.card h3{margin:0 0 6px;font-size:16px}.tag{font-size:11px;background:#2f6fb0;border-radius:6px;padding:2px 6px;margin-left:6px;color:#fff}
+.r{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #22303d}.r:last-child{border:0}
+.note{font-size:12px;color:#93a1ae}
+</style></head><body>
+<h1>USD/JPY</h1><div id="px">-</div><div id="st"></div>
+<div class="grid">
+<div><label>Timeframe</label><select id="tf"><option value="5m">5 menit</option><option value="15m">15 menit</option><option value="1h">1 jam</option><option value="1d">Harian</option></select></div>
+<div><label>Rasio R:R</label><input id="rr" type="number" step="0.1" inputmode="decimal"></div>
+<div><label>Saldo (USD)</label><input id="bal" type="number" inputmode="decimal"></div>
+<div><label>Risiko (%)</label><input id="risk" type="number" step="0.1" inputmode="decimal"></div>
+</div>
+<button id="rf">Muat ulang</button> <label style="display:inline"><input id="auto" type="checkbox" style="width:auto"> auto 60 dtk</label>
+<div class="sig n" id="sig">-</div><div id="ind"></div><div id="cards"></div>
+<p class="note">Sinyal otomatis dari EMA, RSI, dan ATR. Bukan jaminan profit. Pasang order secara manual di MT5, uji di akun demo dulu.</p>
+<script>
+const $=id=>document.getElementById(id);
+const TF={'5m':['5m','1d'],'15m':['15m','5d'],'1h':['60m','1mo'],'1d':['1d','6mo']};
+let S={tf:'15m',rr:2,bal:1000,risk:1},G=null,pend={},timer=null;
+try{Object.assign(S,JSON.parse(localStorage.getItem('s')||'{}'))}catch(e){}
+function save(){try{localStorage.setItem('s',JSON.stringify(S))}catch(e){}}
+window.onNet=(id,t)=>{const f=pend[id];delete pend[id];if(f)f(t)};
+function get(u){return new Promise(res=>{const id=Math.random().toString(36).slice(2);pend[id]=res;
+ if(window.Android)Android.get(id,u);else fetch(u).then(r=>r.text()).then(res).catch(e=>res('ERR:'+e))})}
+function ema(a,n){const k=2/(n+1);let e=a[0];for(let i=1;i<a.length;i++)e=a[i]*k+e*(1-k);return e}
+function rsi(a,n){let g=0,l=0;for(let i=1;i<=n;i++){const d=a[i]-a[i-1];d>0?g+=d:l-=d}g/=n;l/=n;
+ for(let i=n+1;i<a.length;i++){const d=a[i]-a[i-1];g=(g*(n-1)+Math.max(d,0))/n;l=(l*(n-1)+Math.max(-d,0))/n}return l?100-100/(1+g/l):100}
+function atr(r,n){let s=0;for(let i=r.length-n;i<r.length;i++){const p=r[i-1].c;s+=Math.max(r[i].h-r[i].l,Math.abs(r[i].h-p),Math.abs(r[i].l-p))}return s/n}
+async function load(){
+ $('st').textContent='Mengambil data...';
+ const [iv,rg]=TF[S.tf];let t='';
+ for(const h of ['query1','query2']){t=await get('https://'+h+'.finance.yahoo.com/v8/finance/chart/JPY=X?interval='+iv+'&range='+rg);if(t.indexOf('ERR:')!==0)break}
+ try{
+  const r=JSON.parse(t).chart.result[0],q=r.indicators.quote[0],rows=[];
+  r.timestamp.forEach((x,i)=>{if(q.close[i]!=null&&q.high[i]!=null&&q.low[i]!=null)rows.push({h:q.high[i],l:q.low[i],c:q.close[i]})});
+  if(rows.length<60)throw 0;
+  const price=r.meta.regularMarketPrice||rows[rows.length-1].c;
+  rows[rows.length-1].c=price;
+  const c=rows.map(x=>x.c),last=rows.slice(-20);
+  const G2={price,e20:ema(c,20),e50:ema(c,50),r:rsi(c,14),a:atr(rows,14),hi:Math.max(...last.map(x=>x.h)),lo:Math.min(...last.map(x=>x.l))};
+  const s=(G2.e20>G2.e50?1:-1)+(price>G2.e50?1:-1)+(G2.r>55?1:G2.r<45?-1:0);
+  G2.sig=s>=2?1:s<=-2?-1:0;G=G2;
+  $('st').textContent='Update '+new Date().toTimeString().slice(0,5);
+  render();
+ }catch(e){$('st').textContent='Gagal ambil data. Cek internet lalu tekan Muat ulang.'}
+}
+function card(name,side,en,rec){
+ const slD=Math.max(1.5*G.a,.1),sl=en-side*slD,tp=en+side*slD*S.rr,pips=slD/.01;
+ const risk=S.bal*S.risk/100,lot=risk/(pips*1000/en);
+ const row=(a,b)=>'<div class="r"><span>'+a+'</span><b>'+b+'</b></div>';
+ return '<div class="card"><h3 class="'+(side>0?'b':'s')+'">'+name+(rec?'<span class="tag">disarankan</span>':'')+'</h3>'
+ +row('Entry',en.toFixed(3))+row('Stop Loss',sl.toFixed(3)+' ('+pips.toFixed(0)+' pip)')+row('Take Profit',tp.toFixed(3)+' ('+(pips*S.rr).toFixed(0)+' pip)')
+ +row('Lot',lot.toFixed(2))+row('Risiko / Target','$'+risk.toFixed(2)+' / $'+(risk*S.rr).toFixed(2))+'</div>';
+}
+function render(){
+ if(!G)return;const g=G,a=g.a;
+ $('px').textContent=g.price.toFixed(3);
+ $('sig').className='sig '+(g.sig>0?'b':g.sig<0?'s':'n');
+ $('sig').textContent=g.sig>0?'BUY':g.sig<0?'SELL':'NETRAL';
+ $('ind').textContent='EMA20 '+g.e20.toFixed(3)+' | EMA50 '+g.e50.toFixed(3)+' | RSI '+g.r.toFixed(0)+' | ATR '+(a/.01).toFixed(0)+' pip';
+ const far=Math.abs(g.price-g.e20)>.8*a;
+ const bLim=g.e20<g.price?g.e20:g.price-.5*a,bStop=Math.max(g.hi,g.price+.3*a);
+ const sLim=g.e20>g.price?g.e20:g.price+.5*a,sStop=Math.min(g.lo,g.price-.3*a);
+ let h='';
+ if(g.sig>0)h=card('BUY MARKET',1,g.price,!far)+card('BUY LIMIT',1,bLim,far)+card('BUY STOP',1,bStop,false);
+ else if(g.sig<0)h=card('SELL MARKET',-1,g.price,!far)+card('SELL LIMIT',-1,sLim,far)+card('SELL STOP',-1,sStop,false);
+ else h='<p class="note">Arah belum jelas. Tunggu breakout dengan pending order di tepi range:</p>'+card('BUY STOP',1,bStop,false)+card('SELL STOP',-1,sStop,false);
+ $('cards').innerHTML=h;
+}
+function bind(id,k,num){$(id).value=S[k];$(id).onchange=()=>{S[k]=num?+$(id).value:$(id).value;save();k==='tf'?load():render()}}
+bind('tf','tf');bind('rr','rr',1);bind('bal','bal',1);bind('risk','risk',1);
+$('rf').onclick=load;
+$('auto').onchange=()=>{clearInterval(timer);if($('auto').checked)timer=setInterval(load,60000)};
+load();
+</script></body></html>
