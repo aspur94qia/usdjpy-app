@@ -1,9 +1,17 @@
 package com.usdjpy.analisa
 
+import android.Manifest
 import android.app.Activity
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Intent
 import android.graphics.Color
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -28,6 +36,7 @@ class MainActivity : Activity() {
     private lateinit var panel: LinearLayout
     private lateinit var status: TextView
     private var trToken = 0
+    private var nid = 100
 
     inner class Bridge {
         @JavascriptInterface
@@ -62,6 +71,48 @@ class MainActivity : Activity() {
                 panel.visibility = View.VISIBLE
                 status.text = "Membuka berita..."
                 a.loadUrl(url)
+            }
+        }
+
+        @JavascriptInterface
+        fun pushNote(t: String, x: String) {
+            try {
+                val pi = PendingIntent.getActivity(
+                    this@MainActivity, 0,
+                    Intent(this@MainActivity, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+                    PendingIntent.FLAG_IMMUTABLE
+                )
+                val n = Notification.Builder(this@MainActivity, "sinyal")
+                    .setSmallIcon(R.drawable.ic_fg)
+                    .setContentTitle(t)
+                    .setContentText(x)
+                    .setStyle(Notification.BigTextStyle().bigText(x))
+                    .setAutoCancel(true)
+                    .setContentIntent(pi)
+                    .build()
+                getSystemService(NotificationManager::class.java).notify(nid++, n)
+            } catch (e: Exception) {
+            }
+        }
+
+        @JavascriptInterface
+        fun watch(on: Boolean) {
+            runOnUiThread {
+                try {
+                    val i = Intent(this@MainActivity, WatchService::class.java)
+                    if (on) startForegroundService(i) else stopService(i)
+                } catch (e: Exception) {
+                }
+            }
+        }
+
+        @JavascriptInterface
+        fun battery() {
+            runOnUiThread {
+                try {
+                    startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")))
+                } catch (e: Exception) {
+                }
             }
         }
     }
@@ -125,6 +176,10 @@ class MainActivity : Activity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        getSystemService(NotificationManager::class.java)
+            .createNotificationChannel(NotificationChannel("sinyal", "Sinyal dan berita", NotificationManager.IMPORTANCE_HIGH))
+        if (Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
+
         w = WebView(this)
         w.settings.javaScriptEnabled = true
         w.settings.domStorageEnabled = true
