@@ -3,14 +3,16 @@
 <style>
 body{margin:0;padding:14px;background:#0e151c;color:#e6edf3;font:15px/1.45 sans-serif}
 h1{font-size:18px;margin:0;color:#93a1ae;font-weight:600}
+h2{font-size:15px;margin:0 0 6px}
 #px{font-size:34px;font-weight:700;margin:2px 0}
 #st{font-size:12px;color:#93a1ae}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}
 label{font-size:12px;color:#93a1ae;display:block}
 input,select{width:100%;box-sizing:border-box;padding:8px;background:#16212b;color:#e6edf3;border:1px solid #2a3846;border-radius:8px;font-size:15px}
 button{padding:10px 14px;border:0;border-radius:8px;background:#2f6fb0;color:#fff;font-size:15px;font-weight:600}
+button.alt{background:transparent;border:1px solid #2f6fb0;color:#7db4e6}
 .sig{font-size:30px;font-weight:700;margin:10px 0 0}.b{color:#3ecf93}.s{color:#ff6b5e}.n{color:#93a1ae}
-#ind{font-size:12.5px;color:#93a1ae;margin-bottom:10px}
+#mtf,#ind{font-size:12.5px;color:#93a1ae;margin:2px 0 10px}
 .card{background:#16212b;border:1px solid #2a3846;border-radius:10px;padding:12px;margin-bottom:10px}
 .card h3{margin:0 0 6px;font-size:16px}.tag{font-size:11px;background:#2f6fb0;border-radius:6px;padding:2px 6px;margin-left:6px;color:#fff}
 .r{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #22303d}.r:last-child{border:0}
@@ -24,35 +26,68 @@ button{padding:10px 14px;border:0;border-radius:8px;background:#2f6fb0;color:#ff
 <div><label>Risiko (%)</label><input id="risk" type="number" step="0.1" inputmode="decimal"></div>
 </div>
 <button id="rf">Muat ulang</button> <label style="display:inline"><input id="auto" type="checkbox" style="width:auto"> auto 60 dtk</label>
-<div class="sig n" id="sig">-</div><div id="ind"></div><div id="cards"></div>
-<p class="note">Sinyal otomatis dari EMA, RSI, dan ATR. Bukan jaminan profit. Pasang order secara manual di MT5, uji di akun demo dulu.</p>
+<div class="sig n" id="sig">-</div><div id="mtf"></div><div id="ind"></div><div id="cards"></div>
+<button id="jb" style="display:none;margin-bottom:12px">Catat sinyal ini ke jurnal</button>
+<div class="card"><h2>Backtest aturan sinyal</h2><div id="bt" class="note"></div></div>
+<div class="card"><h2>Jurnal sinyal</h2><div id="jr"></div><button class="alt" id="jc" style="margin-top:8px">Hapus jurnal</button></div>
+<p class="note">Sinyal otomatis dari EMA, RSI, dan ATR. Bukan jaminan profit. Pasang order manual di MT5, uji di akun demo dulu.</p>
 <script>
 const $=id=>document.getElementById(id);
-const TF={'5m':['5m','1d'],'15m':['15m','5d'],'1h':['60m','1mo'],'1d':['1d','6mo']};
-let S={tf:'15m',rr:2,bal:1000,risk:1},G=null,pend={},timer=null;
+const TF={'5m':['5m','5d'],'15m':['15m','1mo'],'1h':['60m','6mo'],'1d':['1d','2y']};
+const HR={'5m':['60m','3mo'],'15m':['60m','3mo'],'1h':['1d','1y'],'1d':['1wk','5y']};
+const HN={'5m':'1 jam','15m':'1 jam','1h':'harian','1d':'mingguan'};
+let S={tf:'15m',rr:2,bal:1000,risk:1},G=null,pend={},timer=null,J=[];
 try{Object.assign(S,JSON.parse(localStorage.getItem('s')||'{}'))}catch(e){}
+try{J=JSON.parse(localStorage.getItem('j')||'[]')}catch(e){}
 function save(){try{localStorage.setItem('s',JSON.stringify(S))}catch(e){}}
+function saveJ(){try{localStorage.setItem('j',JSON.stringify(J))}catch(e){}}
 window.onNet=(id,t)=>{const f=pend[id];delete pend[id];if(f)f(t)};
 function get(u){return new Promise(res=>{const id=Math.random().toString(36).slice(2);pend[id]=res;
  if(window.Android)Android.get(id,u);else fetch(u).then(r=>r.text()).then(res).catch(e=>res('ERR:'+e))})}
-function ema(a,n){const k=2/(n+1);let e=a[0];for(let i=1;i<a.length;i++)e=a[i]*k+e*(1-k);return e}
-function rsi(a,n){let g=0,l=0;for(let i=1;i<=n;i++){const d=a[i]-a[i-1];d>0?g+=d:l-=d}g/=n;l/=n;
- for(let i=n+1;i<a.length;i++){const d=a[i]-a[i-1];g=(g*(n-1)+Math.max(d,0))/n;l=(l*(n-1)+Math.max(-d,0))/n}return l?100-100/(1+g/l):100}
-function atr(r,n){let s=0;for(let i=r.length-n;i<r.length;i++){const p=r[i-1].c;s+=Math.max(r[i].h-r[i].l,Math.abs(r[i].h-p),Math.abs(r[i].l-p))}return s/n}
+async function fetchRows(iv,rg){
+ let t='';
+ for(const h of ['query1','query2']){t=await get('https://'+h+'.finance.yahoo.com/v8/finance/chart/JPY=X?interval='+iv+'&range='+rg);if(t.indexOf('ERR:')!==0)break}
+ const r=JSON.parse(t).chart.result[0],q=r.indicators.quote[0],rows=[];
+ r.timestamp.forEach((x,i)=>{if(q.close[i]!=null&&q.high[i]!=null&&q.low[i]!=null)rows.push({t:x,h:q.high[i],l:q.low[i],c:q.close[i]})});
+ return{rows:rows,price:r.meta.regularMarketPrice||rows[rows.length-1].c};
+}
+function emaS(a,n){const k=2/(n+1),o=[a[0]];for(let i=1;i<a.length;i++)o.push(a[i]*k+o[i-1]*(1-k));return o}
+function rsiS(a,n){const o=new Array(a.length).fill(50);let g=0,l=0;
+ for(let i=1;i<=n;i++){const d=a[i]-a[i-1];d>0?g+=d:l-=d}g/=n;l/=n;o[n]=l?100-100/(1+g/l):100;
+ for(let i=n+1;i<a.length;i++){const d=a[i]-a[i-1];g=(g*(n-1)+Math.max(d,0))/n;l=(l*(n-1)+Math.max(-d,0))/n;o[i]=l?100-100/(1+g/l):100}return o}
+function atrS(r,n){const tr=r.map((x,i)=>i?Math.max(x.h-x.l,Math.abs(x.h-r[i-1].c),Math.abs(x.l-r[i-1].c)):x.h-x.l),o=[];let s=0;
+ for(let i=0;i<r.length;i++){s+=tr[i];if(i>=n)s-=tr[i-n];o.push(s/Math.min(i+1,n))}return o}
+function sigAt(e20,e50,r,c){const s=(e20>e50?1:-1)+(c>e50?1:-1)+(r>55?1:r<45?-1:0);return s>=2?1:s<=-2?-1:0}
+function ind(rows){const c=rows.map(x=>x.c);return{c:c,e20:emaS(c,20),e50:emaS(c,50),r:rsiS(c,14),a:atrS(rows,14)}}
+function backtest(rows,I,rr){
+ let w=0,l=0,i=60;
+ while(i<rows.length-1){
+  const s=sigAt(I.e20[i],I.e50[i],I.r[i],I.c[i]);
+  if(!s){i++;continue}
+  const en=I.c[i],d=Math.max(1.5*I.a[i],.1),sl=en-s*d,tp=en+s*d*rr;let j=i+1,done=0;
+  for(;j<rows.length;j++){
+   const hitSL=s>0?rows[j].l<=sl:rows[j].h>=sl,hitTP=s>0?rows[j].h>=tp:rows[j].l<=tp;
+   if(hitSL){l++;done=1;break}
+   if(hitTP){w++;done=1;break}
+  }
+  if(!done)break;
+  i=j+1;
+ }
+ return{w:w,l:l};
+}
 async function load(){
  $('st').textContent='Mengambil data...';
- const [iv,rg]=TF[S.tf];let t='';
- for(const h of ['query1','query2']){t=await get('https://'+h+'.finance.yahoo.com/v8/finance/chart/JPY=X?interval='+iv+'&range='+rg);if(t.indexOf('ERR:')!==0)break}
  try{
-  const r=JSON.parse(t).chart.result[0],q=r.indicators.quote[0],rows=[];
-  r.timestamp.forEach((x,i)=>{if(q.close[i]!=null&&q.high[i]!=null&&q.low[i]!=null)rows.push({h:q.high[i],l:q.low[i],c:q.close[i]})});
-  if(rows.length<60)throw 0;
-  const price=r.meta.regularMarketPrice||rows[rows.length-1].c;
-  rows[rows.length-1].c=price;
-  const c=rows.map(x=>x.c),last=rows.slice(-20);
-  const G2={price,e20:ema(c,20),e50:ema(c,50),r:rsi(c,14),a:atr(rows,14),hi:Math.max(...last.map(x=>x.h)),lo:Math.min(...last.map(x=>x.l))};
-  const s=(G2.e20>G2.e50?1:-1)+(price>G2.e50?1:-1)+(G2.r>55?1:G2.r<45?-1:0);
-  G2.sig=s>=2?1:s<=-2?-1:0;G=G2;
+  const a=TF[S.tf],h=HR[S.tf];
+  const A=await fetchRows(a[0],a[1]),B=await fetchRows(h[0],h[1]);
+  if(A.rows.length<80||B.rows.length<55)throw 0;
+  A.rows[A.rows.length-1].c=A.price;
+  const I=ind(A.rows),n=A.rows.length-1,last=A.rows.slice(-20),K=ind(B.rows),m=B.rows.length-1;
+  const hs=(K.e20[m]>K.e50[m]?1:-1)+(K.c[m]>K.e50[m]?1:-1);
+  const base=sigAt(I.e20[n],I.e50[n],I.r[n],I.c[n]),ht=hs>1?1:hs<-1?-1:0;
+  G={price:A.price,e20:I.e20[n],e50:I.e50[n],r:I.r[n],a:I.a[n],
+   hi:Math.max(...last.map(x=>x.h)),lo:Math.min(...last.map(x=>x.l)),
+   rows:A.rows,I:I,base:base,ht:ht,blocked:base!==0&&ht===-base,sig:(base!==0&&ht!==-base)?base:0};
   $('st').textContent='Update '+new Date().toTimeString().slice(0,5);
   render();
  }catch(e){$('st').textContent='Gagal ambil data. Cek internet lalu tekan Muat ulang.'}
@@ -65,11 +100,27 @@ function card(name,side,en,rec){
  +row('Entry',en.toFixed(3))+row('Stop Loss',sl.toFixed(3)+' ('+pips.toFixed(0)+' pip)')+row('Take Profit',tp.toFixed(3)+' ('+(pips*S.rr).toFixed(0)+' pip)')
  +row('Lot',lot.toFixed(2))+row('Risiko / Target','$'+risk.toFixed(2)+' / $'+(risk*S.rr).toFixed(2))+'</div>';
 }
+function jstat(e){
+ for(const x of G.rows){if(x.t<=e.ts)continue;
+  const hs=e.s>0?x.l<=e.sl:x.h>=e.sl,ht=e.s>0?x.h>=e.tp:x.l<=e.tp;
+  if(hs)return'K';if(ht)return'M'}
+ return'B';
+}
+function jrender(){
+ if(!G)return;
+ let w=0,l=0,h='';
+ J.slice().reverse().forEach((e,i)=>{
+  const s=jstat(e);if(s==='M')w++;if(s==='K')l++;
+  if(i<8)h+='<div class="r"><span>'+(e.s>0?'BUY ':'SELL ')+e.en.toFixed(3)+' <small class="n">'+new Date(e.ts*1000).toTimeString().slice(0,5)+'</small></span><b class="'+(s==='M'?'b':s==='K'?'s':'n')+'">'+(s==='M'?'MENANG':s==='K'?'KALAH':'berjalan')+'</b></div>';
+ });
+ $('jr').innerHTML='<div class="note">'+J.length+' sinyal | menang '+w+' | kalah '+l+(w+l?' | win rate '+(100*w/(w+l)).toFixed(0)+'%':'')+'</div>'+h;
+}
 function render(){
- if(!G)return;const g=G,a=g.a;
+ if(!G)return;const g=G,a=g.a,hn=HN[S.tf],ht=g.ht>0?'naik':g.ht<0?'turun':'datar';
  $('px').textContent=g.price.toFixed(3);
  $('sig').className='sig '+(g.sig>0?'b':g.sig<0?'s':'n');
  $('sig').textContent=g.sig>0?'BUY':g.sig<0?'SELL':'NETRAL';
+ $('mtf').textContent=g.blocked?'Sinyal '+(g.base>0?'BUY':'SELL')+' ditahan: berlawanan dengan tren '+hn+' ('+ht+').':'Tren '+hn+': '+ht+(g.sig&&g.ht===g.sig?' (searah sinyal)':'')+'.';
  $('ind').textContent='EMA20 '+g.e20.toFixed(3)+' | EMA50 '+g.e50.toFixed(3)+' | RSI '+g.r.toFixed(0)+' | ATR '+(a/.01).toFixed(0)+' pip';
  const far=Math.abs(g.price-g.e20)>.8*a;
  const bLim=g.e20<g.price?g.e20:g.price-.5*a,bStop=Math.max(g.hi,g.price+.3*a);
@@ -77,12 +128,20 @@ function render(){
  let h='';
  if(g.sig>0)h=card('BUY MARKET',1,g.price,!far)+card('BUY LIMIT',1,bLim,far)+card('BUY STOP',1,bStop,false);
  else if(g.sig<0)h=card('SELL MARKET',-1,g.price,!far)+card('SELL LIMIT',-1,sLim,far)+card('SELL STOP',-1,sStop,false);
+ else if(g.blocked)h='<p class="note">Tunggu sampai arah sinyal searah dengan tren '+hn+'.</p>';
  else h='<p class="note">Arah belum jelas. Tunggu breakout dengan pending order di tepi range:</p>'+card('BUY STOP',1,bStop,false)+card('SELL STOP',-1,sStop,false);
  $('cards').innerHTML=h;
+ $('jb').style.display=g.sig?'inline-block':'none';
+ const b=backtest(g.rows,g.I,S.rr),n=b.w+b.l,net=b.w*S.rr-b.l,be=100/(1+S.rr);
+ $('bt').innerHTML=n?(n+' trade dari '+g.rows.length+' candle: menang '+b.w+', kalah '+b.l+'. Win rate <b>'+(100*b.w/n).toFixed(0)+'%</b> (impas '+be.toFixed(0)+'%). Hasil bersih <b class="'+(net>0?'b':'s')+'">'+(net>0?'+':'')+net.toFixed(1)+' R</b>, rata-rata '+(net/n>0?'+':'')+(net/n).toFixed(2)+' R per trade. '+(net>0?'Positif di data ini, lanjut uji di demo.':'Belum menguntungkan di data ini, jangan pakai uang asli.')):'Belum ada trade di data ini.';
+ $('bt').innerHTML+='<br>Tanpa spread dan biaya. Jika SL dan TP kena di candle yang sama, dihitung kalah. Filter tren tinggi tidak ikut diuji.';
+ jrender();
 }
 function bind(id,k,num){$(id).value=S[k];$(id).onchange=()=>{S[k]=num?+$(id).value:$(id).value;save();k==='tf'?load():render()}}
 bind('tf','tf');bind('rr','rr',1);bind('bal','bal',1);bind('risk','risk',1);
 $('rf').onclick=load;
 $('auto').onchange=()=>{clearInterval(timer);if($('auto').checked)timer=setInterval(load,60000)};
+$('jb').onclick=()=>{const d=Math.max(1.5*G.a,.1),s=G.sig;J.push({ts:Math.floor(Date.now()/1000),s:s,en:G.price,sl:G.price-s*d,tp:G.price+s*d*S.rr});J=J.slice(-30);saveJ();jrender()};
+$('jc').onclick=()=>{J=[];saveJ();jrender()};
 load();
 </script></body></html>
