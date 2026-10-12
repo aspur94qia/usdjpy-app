@@ -1,8 +1,10 @@
 package com.usdjpy.analisa
 
 import android.app.Activity
+import android.content.Intent
 import android.os.Bundle
 import android.webkit.JavascriptInterface
+import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import java.net.HttpURLConnection
@@ -36,7 +38,15 @@ class MainActivity : Activity() {
         w.settings.javaScriptEnabled = true
         w.settings.domStorageEnabled = true
         w.addJavascriptInterface(Bridge(), "Android")
-        w.webViewClient = WebViewClient()
+        w.webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(v: WebView, r: WebResourceRequest): Boolean {
+                if (r.url.scheme == "http" || r.url.scheme == "https") {
+                    startActivity(Intent(Intent.ACTION_VIEW, r.url))
+                    return true
+                }
+                return false
+            }
+        }
         setContentView(w)
         w.loadUrl("file:///android_asset/index.html")
     }
